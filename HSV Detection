@@ -1,0 +1,224 @@
+import cv2
+import numpy as np
+import serial
+import RPi.GPIO as GPIO 
+
+if __name__ == '__main__':
+    GPIO.setwarnings(False)
+    kernel = np.ones((5,5),np.uint8)
+    cap = cv2.VideoCapture(0)
+    panjang=320
+    lebar=240
+    cap.set(3,panjang)
+    cap.set(4,lebar)
+    in1 = 24
+    in2 = 23
+    en = 25
+    GPIO.setmode(GPIO.BCM)
+    GPIO.setup(in1,GPIO.OUT)
+    GPIO.setup(in2,GPIO.OUT)
+    GPIO.setup(en,GPIO.OUT)
+    GPIO.output(in1,GPIO.LOW)
+    GPIO.output(in2,GPIO.LOW)
+    p=GPIO.PWM(en,1000)
+    kondisinya=0
+    p.start(100)
+    final=0
+    p.ChangeDutyCycle(70)
+    ser = serial.Serial('/dev/ttyUSB0', 115200, timeout=0.05)
+    ser.reset_input_buffer()
+
+    def nothing(x):
+        pass
+    cv2.namedWindow('HueComp')
+    cv2.namedWindow('SatComp')
+    cv2.namedWindow('ValComp')
+    cv2.namedWindow('closing')
+    cv2.namedWindow('tracking')
+
+    cv2.createTrackbar('hmin', 'HueComp',159,179,nothing)
+    cv2.createTrackbar('hmax', 'HueComp',179,179,nothing)
+
+    cv2.createTrackbar('smin', 'SatComp',101,255,nothing)
+    cv2.createTrackbar('smax', 'SatComp',226,255,nothing)
+
+    cv2.createTrackbar('vmin', 'ValComp',84,255,nothing)
+    cv2.createTrackbar('vmax', 'ValComp',138,255,nothing)
+
+    def sortSecond(val):
+        return val[1] 
+    while True:
+        nilai=""
+        if(ser.in_waiting>0):
+            while ser.in_waiting:  
+                nilai =str(ser.readline())
+                nilai=nilai.replace(r"\r\n","")
+                nilai=nilai.replace("b","")
+                nilai=nilai.replace("'","")
+                if(nilai!="" ):
+                  akhir=nilai
+        if(int(akhir)>200 and int(akhir)<580):
+            final=int(akhir)
+        print(final)
+                
+        buzz = 0
+        GPIO.output(in1,GPIO.LOW)
+        GPIO.output(in2,GPIO.LOW)
+        
+        ser.write(b"m\n")
+        _, frame = cap.read()
+        HSV = cv2.cvtColor(frame,cv2.COLOR_BGR2HSV)
+        Hue,sat,val = cv2.split(HSV)
+        hmn = cv2.getTrackbarPos('hmin','HueComp')
+        hmx = cv2.getTrackbarPos('hmax','HueComp')
+        
+
+        smn = cv2.getTrackbarPos('smin','SatComp')
+        smx = cv2.getTrackbarPos('smax','SatComp')
+
+
+        vmn = cv2.getTrackbarPos('vmin','ValComp')
+        vmx = cv2.getTrackbarPos('vmax','ValComp')
+        hthresh = cv2.inRange(np.array(Hue),np.array(hmn),np.array(hmx))
+        sthresh = cv2.inRange(np.array(sat),np.array(smn),np.array(smx))
+        vthresh = cv2.inRange(np.array(val),np.array(vmn),np.array(vmx))
+        tracking = cv2.bitwise_and(hthresh,cv2.bitwise_and(sthresh,vthresh))
+        #kebalikan =cv2.bitwise_not(hthresh,cv2.bitwise_and(sthresh,vthresh))
+
+        dilation = cv2.dilate(tracking,kernel,iterations = 1)
+        #dilation1 = cv2.dilate(kebalikan,kernel,iterations = 1)
+        closing = cv2.morphologyEx(dilation, cv2.MORPH_CLOSE, kernel)
+        closing = cv2.GaussianBlur(closing,(5,5),0)
+        #closing1 = cv2.morphologyEx(dilation1, cv2.MORPH_CLOSE, kernel)
+        #closing1 = cv2.GaussianBlur(closing1,(5,5),0)
+        contours, hierarchy = cv2.findContours(closing,  
+        cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_TC89_L1) 
+        result = frame.copy()
+        polygonelist = []
+        kanan=[]
+        kiri=[]
+        kananrev=[]
+        kirirev=[]
+        xkanan=0
+        xkiri=0
+        ykanan=0
+        ykiri=0
+        #print("baru")
+        for cntr in contours:
+            perimeter = cv2.arcLength(cntr,True)
+            epsilon = 0.005*cv2.arcLength(cntr,True)
+            approx = cv2.approxPolyDP(cntr,epsilon,True)
+            #print(approx)
+            polygonelist.append(approx)
+        cv2.drawContours(frame, polygonelist, -1, (0, 255, 0), 2)
+        for x in range(0,len(polygonelist)):
+            for a in range(0,len(polygonelist[x])):
+                for b in range(0,len(polygonelist[x][a])):
+                    if(x==0):
+                        kanan.append(polygonelist[x][a][b])
+                        kananrev.append(polygonelist[x][a][b])
+                    elif(x==1):
+                        kiri.append(polygonelist[x][a][b])
+                        kirirev.append(polygonelist[x][a][b])
+        #for k in range(0,len(kanan)):
+        #    print(kanan[k][1])
+        kanan.sort(key=sortSecond) 
+        kiri.sort(key=sortSecond) 
+        kananrev.sort(key=sortSecond,reverse=True) 
+        kirirev.sort(key=sortSecond,reverse=True) 
+        for k in range (0,2):
+            if(k==0):
+                xkanan=kanan[k][0]
+                xkiri=kiri[k][0]
+                ykiri=kanan[k][1]
+                ykanan=kiri[k][1]
+            elif(k==1):
+                if(kanan[k][0]<xkanan):
+                    xkananatas=kanan[k][0]
+                    ykananatas=kanan[k][1]
+                else:
+                    xkananatas=xkanan
+                    ykananatas=ykanan
+                if(kiri[k][0]>xkiri):
+                    xkiriatas=kiri[k][0]
+                    ykiriatas=kiri[k][1]
+                else:
+                    xkiriatas=xkiri
+                    ykiriatas=ykiri
+        #print(xkananatas,ykananatas,xkiriatas,ykiriatas)
+        for k in range (0,2):
+            if(k==0):
+                xkanan=kananrev[k][0]
+                xkiri=kirirev[k][0]
+                ykiri=kananrev[k][1]
+                ykanan=kirirev[k][1]
+            elif(k==1):
+                if(kananrev[k][0]<xkanan):
+                    xkananbawah=kananrev[k][0]
+                    ykananbawah=kananrev[k][1]
+                else:
+                    xkananbawah=xkanan
+                    ykananbawah=ykanan
+                if(kiri[k][0]>xkiri):
+                    xkiribawah=kirirev[k][0]
+                    ykiribawah=kirirev[k][1]
+                else:
+                    xkiribawah=xkiri
+                    ykiribawah=ykiri
+        misskiri=int(panjang/2)-xkiriatas
+        misskanan=xkananatas-int(panjang/2)
+        print(misskiri,misskanan,abs(misskanan-misskiri))
+        posisi="Kanan"
+        print(kondisinya)
+        if(abs(misskanan-misskiri)<=100):
+            posisi="Tengah"
+        else:
+            if(misskiri>misskanan):
+                posisi="Kiri"
+                kondisinya=1
+                GPIO.output(in1,GPIO.LOW)
+                GPIO.output(in2,GPIO.HIGH)
+            else:
+                posisi="Kanan"
+                kondisinya=2
+                GPIO.output(in1,GPIO.HIGH)
+                GPIO.output(in2,GPIO.LOW)
+        if(kondisinya==1 and posisi=="Tengah"):
+            if(final>340 and final<450):
+                GPIO.output(in1,GPIO.LOW)
+                GPIO.output(in2,GPIO.LOW)
+            else:
+                GPIO.output(in1,GPIO.HIGH)
+                GPIO.output(in2,GPIO.LOW)
+                print("Balik arah")
+        elif(kondisinya==2 and posisi=="Tengah"):
+            if(final>340 and final<450):
+                GPIO.output(in1,GPIO.LOW)
+                GPIO.output(in2,GPIO.LOW)
+            else:
+                GPIO.output(in1,GPIO.LOW)
+                GPIO.output(in2,GPIO.HIGH)
+                print("Balik arah")
+        
+        cv2.putText(frame, posisi, (0,20), cv2.FONT_HERSHEY_SIMPLEX, 
+                       0.5, (255, 0, 0), 2, cv2.LINE_AA)
+        cv2.circle(frame, (int(panjang/2),lebar), radius=2, color=(0, 0, 255), thickness=10)
+        cv2.line(frame, (int(panjang/2),0), ((int(panjang/2),lebar)), (255, 0, 0), 2)
+        cv2.line(frame, (xkananatas,ykananatas), ((int(panjang/2),lebar)), (0, 0, 255), 1)
+        cv2.line(frame, (xkiriatas,ykiriatas), ((int(panjang/2),lebar)), (0, 0, 255), 1)
+        cv2.line(frame, (xkananbawah,ykananbawah), ((int(panjang/2),lebar)), (0, 0, 255), 1)
+        cv2.line(frame, (xkiribawah,ykiribawah), ((int(panjang/2),lebar)), (0, 0, 255), 1)
+        #cv2.line(frame, (xkanantengan,ykanantengan), ((int(panjang/2),lebar)), (0, 0, 255), 1)
+        #cv2.line(frame, (xkiritengan,ykiritengan), ((int(panjang/2),lebar)), (0, 0, 255), 1)
+        #cv2.imshow('HueComp',hthresh)
+        #cv2.imshow('SatComp',sthresh)
+        #cv2.imshow('ValComp',vthresh)
+        #cv2.imshow('closing',closing)
+        cv2.imshow('tracking',frame)
+        k = cv2.waitKey(5) & 0xFF
+        if k == 27:
+            break
+
+    cap.release()
+
+    cv2.destroyAllWindows()
