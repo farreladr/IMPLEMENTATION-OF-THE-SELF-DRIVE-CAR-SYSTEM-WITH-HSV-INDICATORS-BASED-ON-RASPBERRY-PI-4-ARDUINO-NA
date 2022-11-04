@@ -1,0 +1,47 @@
+int RPWM = 11;
+int LPWM = 3;
+int L_EN = 2;
+int R_EN = 12;
+String msg;
+
+unsigned long interval = 1000; // the time we need to wait
+unsigned long previousMillis = 0;
+void setup() {
+  // put your setup code here, to run once:
+  Serial.begin(115200);
+  pinMode(RPWM, OUTPUT);
+  pinMode(LPWM, OUTPUT);
+  pinMode(R_EN, OUTPUT);
+  pinMode(L_EN, OUTPUT);
+
+  digitalWrite(R_EN, HIGH);
+  digitalWrite(L_EN, HIGH);
+}
+
+void loop() {
+  //  forward
+  unsigned long currentMillis = millis();
+  if ((unsigned long)(currentMillis - previousMillis) >= interval) {
+    int nilai_sensor = analogRead(A5);
+    Serial.println(nilai_sensor);
+    previousMillis = millis();
+  }
+
+  if (Serial.available() > 0) {
+    while (Serial.available() > 0) {
+      msg += (char)Serial.read();
+    }
+
+    if (msg == "m") {
+      analogWrite(LPWM, 0);
+      analogWrite(RPWM, 30);
+      delay(1000);
+      msg = "";
+//      Serial.print("oke");
+    }
+    else {
+      analogWrite(LPWM, 250);
+      analogWrite(RPWM, 250);
+      msg = "";
+    }
+  }
